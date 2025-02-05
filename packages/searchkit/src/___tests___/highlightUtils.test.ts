@@ -1,4 +1,4 @@
-import { getFieldValue, getHighlightFields, highlightTerm, shouldHighlightField } from '../highlightUtils'
+import { getHighlightFields, highlightTerm, shouldHighlightField } from '../highlightUtils'
 import { ElasticsearchHit } from '../types'
 
 describe('highlight utils', () => {
@@ -273,71 +273,5 @@ describe('highlight utils', () => {
     }
 
     expect(getHighlightFields(hit, undefined, undefined, ['*'])).toMatchInlineSnapshot(`{}`)
-  })
-
-  describe('getFieldValue', () => {
-    it('should retrieve a top-level field value', () => {
-      const obj = { title: 'The Lion King' }
-      expect(getFieldValue(obj, 'title')).toBe('The Lion King')
-    })
-
-    it('should retrieve a deeply nested field value', () => {
-      const obj = { metadata: { publisher: 'Albert Einstein' } }
-      expect(getFieldValue(obj, 'metadata.publisher')).toBe('Albert Einstein')
-    })
-
-    it('should retrieve an array of values from a nested array field', () => {
-      const obj = {
-        messages: [
-          { text: 'Hello, world!' },
-          { text: 'Search engines are cool.' },
-        ],
-      }
-      expect(getFieldValue(obj, 'messages.text')).toEqual([
-        'Hello, world!',
-        'Search engines are cool.',
-      ])
-    })
-
-    it('should return undefined if a nested field does not exist', () => {
-      const obj = { metadata: { publisher: 'Albert Einstein' } }
-      expect(getFieldValue(obj, 'metadata.year')).toBeUndefined()
-    })
-
-    it('should return undefined if the path leads to a non-existent field', () => {
-      const obj = { title: 'The Lion King' }
-      expect(getFieldValue(obj, 'nonexistentField')).toBeUndefined()
-    })
-
-    it('should handle arrays with objects missing the requested field', () => {
-      const obj = {
-        messages: [
-          { text: 'Hello, world!' },
-          { otherField: 'No text here' },
-        ],
-      }
-      expect(getFieldValue(obj, 'messages.text')).toEqual([
-        'Hello, world!',
-        undefined,
-      ])
-    })
-
-    it('should return undefined if the initial object is null or undefined', () => {
-      expect(getFieldValue(null, 'title')).toBeUndefined()
-      expect(getFieldValue(undefined, 'title')).toBeUndefined()
-    })
-
-    it('should handle nested arrays properly', () => {
-      const obj = {
-        messages: [
-          { text: ['Hello', 'World'] },
-          { text: ['Search', 'Engine'] },
-        ],
-      }
-      expect(getFieldValue(obj, 'messages.text')).toEqual([
-        ['Hello', 'World'],
-        ['Search', 'Engine'],
-      ])
-    })
   })
 })
