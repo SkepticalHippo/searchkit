@@ -6,9 +6,13 @@ export function highlightTerm(value: string, query: string): string {
   return value.replace(regex, (match) => `<em>${match}</em>`)
 }
 
-export function isAllowableHighlightField(fieldKey: string, highlightFields: string[]) {
+export function shouldHighlightField(fieldKey: string, highlightFields: string[]) {
   return (
     highlightFields.findIndex((highlightField) => {
+      if (highlightField.startsWith(fieldKey)) {
+        return true;
+      }
+
       if (highlightField.indexOf('*') < 0) {
         return highlightField === fieldKey
       }
@@ -67,91 +71,73 @@ export function getFieldValue(obj: any, path: string): any {
   }, obj)
 }
 
+function getHighlightedValue(value: any, field: string, hitHighlights?: Record<string, string[]>): string | null {
+  const highlightedValues = hitHighlights?.[field] || hitHighlights?.[`${field}.keyword`];
+
+  return highlightedValues
+    ?.find((match: any) => match.replace(/\<em\>/g, '').replace(/\<\/em\>/g, '') === value) || null;
+}
+
 export function getHighlightFields(
   hit: ElasticsearchHit,
   preTag: string = '<ais-highlight-0000000000>',
   postTag: string = '<ais-highlight-0000000000/>',
   fields: SearchSettingsConfig['snippet_attributes'] = []
 ) {
-  const { _source = {}, highlight = {} } = hit
-
-  const combinedKeys = {
-    ..._source,
-    ...highlight
-  }
-
   const highlightFields = fields.map((field) => getSnippetFieldLength(field).attribute)
 
-  const hitHighlights = Object.keys(combinedKeys).reduce<Record<string, any>>((sum, fieldKey) => {
-    const fieldValue: any = getFieldValue(_source, fieldKey)
-    const highlightedMatch = highlight[fieldKey] || null
+  function mapValue(value: any, path: string): Record<string, any> | null {
+    if (typeof value === "string") {
+      const highlightedValue = getHighlightedValue(value, path, hit.highlight);
 
-    if (!isAllowableHighlightField(fieldKey, highlightFields)) {
-      return sum
-    }
-    // no matches, specified as a highlight and value is an array
-    if (Array.isArray(fieldValue) && !highlightedMatch) {
-      return {
-        ...sum,
-        [fieldKey]: fieldValue.map((value) => ({
-          matchLevel: 'none',
+      if (!highlightedValue) {
+        return {
+          matchLevel: "none",
           matchedWords: [],
-          value: value.toString()
-        }))
+          value: value,
+        };
       }
-      // field array and has multiple highlighted matches
-    } else if (Array.isArray(fieldValue) && highlightedMatch && Array.isArray(highlightedMatch)) {
-      return {
-        ...sum,
-        [fieldKey]: highlightedMatch.map((highlightedMatch) => {
-          const matchWords = Array.from(highlightedMatch.matchAll(/\<em\>(.*?)\<\/em\>/g)).map(
-            (match) => match[1]
-          )
-          return {
-            fullyHighlighted: false,
-            matchLevel: 'full',
-            matchedWords: matchWords,
-            value: highlightedMatch
-              .toString()
-              .replace(/\<em\>/g, preTag)
-              .replace(/\<\/em\>/g, postTag)
-          }
-        })
-      }
-    } else if (
-      (!Array.isArray(fieldValue) && highlightedMatch && Array.isArray(highlightedMatch)) ||
-      (!fieldValue && Array.isArray(highlightedMatch) && highlightedMatch.length > 0)
-    ) {
-      const singleMatch = highlightedMatch[0]
 
-      const matchWords = Array.from(singleMatch.matchAll(/\<em\>(.*?)\<\/em\>/g)).map(
-        (match) => match[1]
-      )
-      const x = {
+      return {
         fullyHighlighted: false,
-        matchLevel: 'full',
-        matchedWords: matchWords,
-        value: singleMatch
-          .toString()
-          .replace(/\<em\>/g, preTag)
-          .replace(/\<\/em\>/g, postTag)
-      }
-
-      return {
-        ...sum,
-        [fieldKey]: x
-      }
+        matchLevel: "full",
+        matchedWords: Array.from(highlightedValue.matchAll(/\<em\>(.*?)\<\/em\>/g)).map((match: any) => match[1]),
+        value: highlightedValue.replace(/\<em\>/g, preTag).replace(/\<\/em\>/g, postTag),
+      };
     }
 
-    return {
-      ...sum,
-      [fieldKey]: {
-        matchLevel: 'none',
-        matchedWords: [],
-        value: fieldValue != undefined ? fieldValue.toString() : ''
-      }
+    if (Array.isArray(value)) {
+      return value.map(item => mapValue(item, path));
     }
-  }, {})
 
-  return transformObject(hitHighlights)
+    if (typeof value === "object" && value !== null) {
+      return mapObject(value, path);
+    }
+
+    return null;
+  }
+
+  function mapObject(object: Object, parentPath: string | null = null): Record<string, any> {
+    return Object.entries(object)
+      .reduce<Record<string, any>>((highlightResult, [childPath, value]) => {
+        const nestedPath = !parentPath ? childPath : `${parentPath}.${childPath}`;
+
+        if (!shouldHighlightField(nestedPath, highlightFields)) {
+          return highlightResult;
+        }
+
+        const data = mapValue(value, nestedPath);
+
+        if (data === null) {
+          return highlightResult;
+        }
+
+        return {
+          ...highlightResult,
+          [childPath]: data
+        };
+      }, {});
+  }
+
+  return mapObject(hit?._source ?? {});
 }

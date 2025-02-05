@@ -1,4 +1,4 @@
-import { getFieldValue, getHighlightFields, highlightTerm, isAllowableHighlightField } from '../highlightUtils'
+import { getFieldValue, getHighlightFields, highlightTerm, shouldHighlightField } from '../highlightUtils'
 import { ElasticsearchHit } from '../types'
 
 describe('highlight utils', () => {
@@ -6,25 +6,29 @@ describe('highlight utils', () => {
     expect(highlightTerm('some random string', 'some')).toBe('<em>some</em> random string')
   })
 
-  describe('isAllowableHighlightField', () => {
+  describe('shouldHighlightField', () => {
     it('should match on exact string', () => {
-      expect(isAllowableHighlightField('title', ['title'])).toBeTruthy()
+      expect(shouldHighlightField('title', ['title'])).toBeTruthy()
+    })
+
+    it('should match when starts with string', () => {
+      expect(shouldHighlightField('actor', ['actor.name.keyword'])).toBeTruthy()
     })
 
     it('should match on wildcard', () => {
-      expect(isAllowableHighlightField('actor.name.keyword', ['actor.*'])).toBeTruthy()
+      expect(shouldHighlightField('actor.name.keyword', ['actor.*'])).toBeTruthy()
     })
 
     it('should not match on unknown fields', () => {
-      expect(isAllowableHighlightField('title', ['actor'])).toBeFalsy()
+      expect(shouldHighlightField('title', ['actor'])).toBeFalsy()
     })
 
     it('should match against everything', () => {
-      expect(isAllowableHighlightField('actor.name.keyword', ['*'])).toBeTruthy()
+      expect(shouldHighlightField('actor.name.keyword', ['*'])).toBeTruthy()
     })
 
     it('should not match on empty highlightFields', () => {
-      expect(isAllowableHighlightField('title', [])).toBeFalsy()
+      expect(shouldHighlightField('title', [])).toBeFalsy()
     })
   })
 
@@ -106,14 +110,12 @@ describe('highlight utils', () => {
         {
           "actor": {
             "name": {
-              "keyword": {
-                "fullyHighlighted": false,
-                "matchLevel": "full",
-                "matchedWords": [
-                  "Keanu",
-                ],
-                "value": "<ais-highlight-0000000000>Keanu<ais-highlight-0000000000/> Reeves",
-              },
+              "fullyHighlighted": false,
+              "matchLevel": "full",
+              "matchedWords": [
+                "Keanu",
+              ],
+              "value": "<ais-highlight-0000000000>Keanu<ais-highlight-0000000000/> Reeves",
             },
           },
         }
@@ -129,7 +131,7 @@ describe('highlight utils', () => {
         actors: ['Robert De Niro', 'Al Pacino']
       },
       highlight: {
-        actors: ['The <em>Robert</em> De Niro']
+        actors: ['<em>Robert</em> De Niro']
       }
     }
 
@@ -142,7 +144,56 @@ describe('highlight utils', () => {
             "matchedWords": [
               "Robert",
             ],
-            "value": "The <ais-highlight-0000000000>Robert<ais-highlight-0000000000/> De Niro",
+            "value": "<ais-highlight-0000000000>Robert<ais-highlight-0000000000/> De Niro",
+          },
+          {
+            "matchLevel": "none",
+            "matchedWords": [],
+            "value": "Al Pacino",
+          },
+        ],
+      }
+    `)
+  })
+
+  it('should have matches and source value is an array of objects', () => {
+    const hit: ElasticsearchHit = {
+      _id: 'test',
+      _index: 'index',
+      _source: {
+        "actors": [
+          {
+              "name": "Robert De Niro",
+          },
+          {
+              "name": "Al Pacino",
+          }
+      ],
+      },
+      highlight: {
+        "actors.name": ['<em>Robert</em> De Niro']
+      }
+    }
+
+    expect(getHighlightFields(hit, undefined, undefined, ['*'])).toMatchInlineSnapshot(`
+      {
+        "actors": [
+          {
+            "name": {
+              "fullyHighlighted": false,
+              "matchLevel": "full",
+              "matchedWords": [
+                "Robert",
+              ],
+              "value": "<ais-highlight-0000000000>Robert<ais-highlight-0000000000/> De Niro",
+            },
+          },
+          {
+            "name": {
+              "matchLevel": "none",
+              "matchedWords": [],
+              "value": "Al Pacino",
+            },
           },
         ],
       }
@@ -196,6 +247,32 @@ describe('highlight utils', () => {
         },
       }
     `)
+  })
+
+  it('should have no matches for booleans with wildcards', () => {
+    const hit: ElasticsearchHit = {
+      _id: 'test',
+      _index: 'index',
+      _source: {
+        is_movie: false
+      },
+      highlight: {}
+    }
+
+    expect(getHighlightFields(hit, undefined, undefined, ['*'])).toMatchInlineSnapshot(`{}`)
+  })
+
+  it('should have no matches for nulls wildcards', () => {
+    const hit: ElasticsearchHit = {
+      _id: 'test',
+      _index: 'index',
+      _source: {
+        title: null
+      },
+      highlight: {}
+    }
+
+    expect(getHighlightFields(hit, undefined, undefined, ['*'])).toMatchInlineSnapshot(`{}`)
   })
 
   describe('getFieldValue', () => {
