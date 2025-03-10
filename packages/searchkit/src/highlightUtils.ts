@@ -1,4 +1,3 @@
-import { getSnippetFieldLength } from './transformRequest'
 import type { ElasticsearchHit, SearchSettingsConfig } from './types'
 
 export function highlightTerm(value: string, query: string): string {
@@ -6,42 +5,26 @@ export function highlightTerm(value: string, query: string): string {
   return value.replace(regex, (match) => `<em>${match}</em>`)
 }
 
-export function shouldHighlightField(fieldKey: string, highlightFields: string[]) {
-  return (
-    highlightFields.findIndex((highlightField) => {
-      if (highlightField.startsWith(fieldKey)) {
-        return true;
-      }
-
-      if (highlightField.indexOf('*') < 0) {
-        return highlightField === fieldKey
-      }
-
-      const safeHighlightField = highlightField.replace(/[.+?^$|\{\}\(\)\[\]\\]/g, '\\$&')
-      const regex = new RegExp(`^${safeHighlightField.replace(/\*/g, '.*')}$`)
-      return regex.test(fieldKey)
-    }) >= 0
-  )
-}
-
-function getHighlightedValue(value: any, field: string, hitHighlights?: Record<string, string[]>): string | null {
+function getHighlightedValue(value: any, field: string, preTag: string, postTag: string, hitHighlights?: Record<string, string[]>): string | null {
   const highlightedValues = hitHighlights?.[field] || hitHighlights?.[`${field}.keyword`];
 
-  return highlightedValues
-    ?.find((match: any) => match.replace(/\<em\>/g, '').replace(/\<\/em\>/g, '') === value) || null;
+  if (highlightedValues?.length === 0) {
+    return highlightedValues[0];
+  }
+
+  const highlightedRegex = new RegExp(`${preTag}(.*?)${postTag}`, 'g');
+
+  return highlightedValues?.find((match: any) => match.replace(highlightedRegex, '$1') === value) || null;
 }
 
 export function getHighlightFields(
   hit: ElasticsearchHit,
   preTag: string = '<ais-highlight-0000000000>',
-  postTag: string = '<ais-highlight-0000000000/>',
-  fields: SearchSettingsConfig['snippet_attributes'] = []
+  postTag: string = '<ais-highlight-0000000000/>'
 ) {
-  const highlightFields = fields.map((field) => getSnippetFieldLength(field).attribute)
-
   function mapValue(value: any, path: string): Record<string, any> | null {
     if (typeof value === "string") {
-      const highlightedValue = getHighlightedValue(value, path, hit.highlight);
+      const highlightedValue = getHighlightedValue(value, path, preTag, postTag, hit.highlight);
 
       if (!highlightedValue) {
         return {
@@ -51,11 +34,18 @@ export function getHighlightFields(
         };
       }
 
+      const regex = new RegExp(`${preTag}(.*?)${postTag}`, "g");
+      const matchedWords = [];
+      let match;
+      while ((match = regex.exec(highlightedValue)) !== null) {
+        matchedWords.push(match[1]);
+      }
+
       return {
-        fullyHighlighted: false,
+        fullyHighlighted: true,
         matchLevel: "full",
-        matchedWords: Array.from(highlightedValue.matchAll(/\<em\>(.*?)\<\/em\>/g)).map((match: any) => match[1]),
-        value: highlightedValue.replace(/\<em\>/g, preTag).replace(/\<\/em\>/g, postTag),
+        matchedWords,
+        value: highlightedValue,
       };
     }
 
@@ -74,10 +64,6 @@ export function getHighlightFields(
     return Object.entries(object)
       .reduce<Record<string, any>>((highlightResult, [childPath, value]) => {
         const nestedPath = !parentPath ? childPath : `${parentPath}.${childPath}`;
-
-        if (!shouldHighlightField(nestedPath, highlightFields)) {
-          return highlightResult;
-        }
 
         const data = mapValue(value, nestedPath);
 

@@ -38,8 +38,7 @@ const getHits = (
           _highlightResult: getHighlightFields(
             hit,
             instantsearchRequest?.params?.highlightPreTag,
-            instantsearchRequest?.params?.highlightPostTag,
-            highlight_attributes
+            instantsearchRequest?.params?.highlightPostTag
           )
         }
       : {}),
@@ -48,8 +47,7 @@ const getHits = (
           _snippetResult: getHighlightFields(
             hit,
             instantsearchRequest?.params?.highlightPreTag,
-            instantsearchRequest?.params?.highlightPostTag,
-            config.snippet_attributes
+            instantsearchRequest?.params?.highlightPostTag
           )
         }
       : {}),

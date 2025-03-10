@@ -368,8 +368,8 @@ export const getHighlightFields = (
 
   return {
     highlight: {
-      pre_tags: ['<em>'],
-      post_tags: ['</em>'],
+      pre_tags: [request.params?.highlightPreTag ?? '<em>'],
+      post_tags: [request.params?.highlightPostTag ?? '</em>'],
       fields: {
         ...highlightFields,
         ...snippetFields

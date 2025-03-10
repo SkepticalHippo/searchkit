@@ -1,35 +1,10 @@
-import { getHighlightFields, highlightTerm, shouldHighlightField } from '../highlightUtils'
+import { getHighlightFields, highlightTerm } from '../highlightUtils'
+import { getSnippetFieldLength } from '../transformRequest'
 import { ElasticsearchHit } from '../types'
 
 describe('highlight utils', () => {
   it('should highlight one match', () => {
     expect(highlightTerm('some random string', 'some')).toBe('<em>some</em> random string')
-  })
-
-  describe('shouldHighlightField', () => {
-    it('should match on exact string', () => {
-      expect(shouldHighlightField('title', ['title'])).toBeTruthy()
-    })
-
-    it('should match when starts with string', () => {
-      expect(shouldHighlightField('actor', ['actor.name.keyword'])).toBeTruthy()
-    })
-
-    it('should match on wildcard', () => {
-      expect(shouldHighlightField('actor.name.keyword', ['actor.*'])).toBeTruthy()
-    })
-
-    it('should not match on unknown fields', () => {
-      expect(shouldHighlightField('title', ['actor'])).toBeFalsy()
-    })
-
-    it('should match against everything', () => {
-      expect(shouldHighlightField('actor.name.keyword', ['*'])).toBeTruthy()
-    })
-
-    it('should not match on empty highlightFields', () => {
-      expect(shouldHighlightField('title', [])).toBeFalsy()
-    })
   })
 
   describe('getHighlightFields', () => {
@@ -45,7 +20,11 @@ describe('highlight utils', () => {
         }
       }
 
-      expect(getHighlightFields(hit, undefined, undefined, ['title'])).toMatchInlineSnapshot(`
+      expect(getHighlightFields(hit, undefined, undefined, ['title'].map((field) => ({
+        hasWildcard: field.indexOf('*') >= 0,
+        wildcardRegex: new RegExp(`^${field.replace(/[.+?^$|\{\}\(\)\[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`),
+        attribute: getSnippetFieldLength(field).attribute
+      })))).toMatchInlineSnapshot(`
         {
           "title": {
             "fullyHighlighted": false,
@@ -75,10 +54,15 @@ describe('highlight utils', () => {
         }
       }
 
-      expect(getHighlightFields(hit, undefined, undefined, ['metadata.publisher']))
+      expect(getHighlightFields(hit, undefined, undefined))
         .toMatchInlineSnapshot(`
         {
           "metadata": {
+            "publicationYear": {
+              "matchLevel": "none",
+              "matchedWords": [],
+              "value": "2023",
+            },
             "publisher": {
               "fullyHighlighted": false,
               "matchLevel": "full",
@@ -106,7 +90,7 @@ describe('highlight utils', () => {
         }
       }
 
-      expect(getHighlightFields(hit, undefined, undefined, ['actor.*'])).toMatchInlineSnapshot(`
+      expect(getHighlightFields(hit, undefined, undefined)).toMatchInlineSnapshot(`
         {
           "actor": {
             "name": {
@@ -135,7 +119,7 @@ describe('highlight utils', () => {
       }
     }
 
-    expect(getHighlightFields(hit, undefined, undefined, ['actors'])).toMatchInlineSnapshot(`
+    expect(getHighlightFields(hit, undefined, undefined)).toMatchInlineSnapshot(`
       {
         "actors": [
           {
@@ -175,7 +159,7 @@ describe('highlight utils', () => {
       }
     }
 
-    expect(getHighlightFields(hit, undefined, undefined, ['*'])).toMatchInlineSnapshot(`
+    expect(getHighlightFields(hit, undefined, undefined)).toMatchInlineSnapshot(`
       {
         "actors": [
           {
@@ -210,7 +194,7 @@ describe('highlight utils', () => {
       highlight: {}
     }
 
-    expect(getHighlightFields(hit, undefined, undefined, ['actors'])).toMatchInlineSnapshot(`
+    expect(getHighlightFields(hit, undefined, undefined)).toMatchInlineSnapshot(`
       {
         "actors": [
           {
@@ -238,7 +222,7 @@ describe('highlight utils', () => {
       highlight: {}
     }
 
-    expect(getHighlightFields(hit, undefined, undefined, ['title'])).toMatchInlineSnapshot(`
+    expect(getHighlightFields(hit, undefined, undefined)).toMatchInlineSnapshot(`
       {
         "title": {
           "matchLevel": "none",
@@ -259,7 +243,7 @@ describe('highlight utils', () => {
       highlight: {}
     }
 
-    expect(getHighlightFields(hit, undefined, undefined, ['*'])).toMatchInlineSnapshot(`{}`)
+    expect(getHighlightFields(hit, undefined, undefined)).toMatchInlineSnapshot(`{}`)
   })
 
   it('should have no matches for nulls wildcards', () => {
@@ -272,6 +256,6 @@ describe('highlight utils', () => {
       highlight: {}
     }
 
-    expect(getHighlightFields(hit, undefined, undefined, ['*'])).toMatchInlineSnapshot(`{}`)
+    expect(getHighlightFields(hit, undefined, undefined)).toMatchInlineSnapshot(`{}`)
   })
 })
